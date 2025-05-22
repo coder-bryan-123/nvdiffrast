@@ -7,7 +7,11 @@
 // license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 #pragma once
+#ifdef USE_ROCM
+#include <hip/hip_runtime.h>
+#else
 #include <cuda.h>
+#endif
 #include <stdint.h>
 
 //------------------------------------------------------------------------
@@ -19,7 +23,7 @@ dim3 getLaunchGridSize(dim3 blockSize, int width, int height, int depth);
 //------------------------------------------------------------------------
 // The rest is CUDA device code specific stuff.
 
-#ifdef __CUDACC__
+#if defined(__CUDACC__) || defined(USE_ROCM)
 
 //------------------------------------------------------------------------
 // Helpers for CUDA vector types.
@@ -195,13 +199,30 @@ static __device__ __forceinline__ float triidx_to_float(int x)   { if (x <= 0x01
 //------------------------------------------------------------------------
 // Coalesced atomics. These are all done via macros.
 
-#if __CUDA_ARCH__ >= 700 // Warp match instruction __match_any_sync() is only available on compute capability 7.x and higher
+#if (__CUDA_ARCH__ >= 700 || USE_ROCM == 1) // Warp match instruction __match_any_sync() is only available on compute capability 7.x and higher
 
 #define CA_TEMP       _ca_temp
 #define CA_TEMP_PARAM float* CA_TEMP
 #define CA_DECLARE_TEMP(threads_per_block) \
     __shared__ float CA_TEMP[(threads_per_block)]
 
+#ifdef USE_ROCM
+#define CA_SET_GROUP_MASK(group, thread_mask)                   \
+    bool   _ca_leader;                                          \
+    float* _ca_ptr;                                             \
+    do {                                                        \
+        int tidx   = threadIdx.x + blockDim.x * threadIdx.y;    \
+        int lane   = tidx & 63;                                 \
+        int warp   = tidx >> 6;                                 \
+        int tmask  = __match_any_sync((thread_mask), (group));  \
+        int leader = __ffs(tmask) - 1;                          \
+        _ca_leader = (leader == lane);                          \
+        _ca_ptr    = &_ca_temp[((warp << 5) + leader)];         \
+    } while(0)
+
+#define CA_SET_GROUP(group) \
+    CA_SET_GROUP_MASK((group), ~0ULL)
+#else
 #define CA_SET_GROUP_MASK(group, thread_mask)                   \
     bool   _ca_leader;                                          \
     float* _ca_ptr;                                             \
@@ -217,6 +238,7 @@ static __device__ __forceinline__ float triidx_to_float(int x)   { if (x <= 0x01
 
 #define CA_SET_GROUP(group) \
     CA_SET_GROUP_MASK((group), 0xffffffffu)
+#endif
 
 #define caAtomicAdd(ptr, value)         \
     do {                                \

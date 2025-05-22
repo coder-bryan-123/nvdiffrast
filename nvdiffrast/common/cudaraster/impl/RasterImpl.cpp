@@ -10,7 +10,12 @@
 #include "PrivateDefs.hpp"
 #include "Constants.hpp"
 #include "RasterImpl.hpp"
+#ifdef USE_ROCM
+#include <hip/hip_runtime.h>
+#else
 #include <cuda_runtime.h>
+#endif
+#include <c10/util/Logging.h>
 
 using namespace CR;
 using std::min;
@@ -261,14 +266,14 @@ void RasterImpl::launchStages(bool instanceMode, bool peel, cudaStream_t stream)
     }
 
     // Copy to device. If peeling, this is the state after coarse raster launch on first iteration.
-    NVDR_CHECK_CUDA_ERROR(cudaMemcpyAsync(m_crAtomics.getPtr(), atomics, m_numImages * sizeof(CRAtomics), cudaMemcpyHostToDevice, stream));
+    NVDR_CHECK_CUDA_ERROR(MEMCPY_ASYNC(m_crAtomics.getPtr(), atomics, m_numImages * sizeof(CRAtomics), cudaMemcpyHostToDevice, stream));
 
     // Copy per-image parameters if there are more than fits in launch parameter block and we haven't done it already.
     if (!peel && m_numImages > CR_EMBED_IMAGE_PARAMS)
     {
         int numImageParamsExtra = m_numImages - CR_EMBED_IMAGE_PARAMS;
         m_crImageParamsExtra.grow(numImageParamsExtra * sizeof(CRImageParams));
-        NVDR_CHECK_CUDA_ERROR(cudaMemcpyAsync(m_crImageParamsExtra.getPtr(), imageParams + CR_EMBED_IMAGE_PARAMS, numImageParamsExtra * sizeof(CRImageParams), cudaMemcpyHostToDevice, stream));
+        NVDR_CHECK_CUDA_ERROR(MEMCPY_ASYNC(m_crImageParamsExtra.getPtr(), imageParams + CR_EMBED_IMAGE_PARAMS, numImageParamsExtra * sizeof(CRImageParams), cudaMemcpyHostToDevice, stream));
     }
 
     // Set global parameters.
@@ -348,23 +353,23 @@ void RasterImpl::launchStages(bool instanceMode, bool peel, cudaStream_t stream)
         if (instanceMode)
         {
             int setupBlocks = (m_numTriangles - 1) / (32 * CR_SETUP_WARPS) + 1;
-            NVDR_CHECK_CUDA_ERROR(cudaLaunchKernel((void*)triangleSetupKernel, dim3(setupBlocks, 1, m_numImages), dim3(32, CR_SETUP_WARPS), args, 0, stream));
+            NVDR_CHECK_CUDA_ERROR(LAUNCH_KERNEL((void*)triangleSetupKernel, dim3(setupBlocks, 1, m_numImages), dim3(32, CR_SETUP_WARPS), args, 0, stream));
         }
         else
         {
             for (int i=0; i < m_numImages; i++)
                 p.totalCount += imageParams[i].triCount;
             int setupBlocks = (p.totalCount - 1) / (32 * CR_SETUP_WARPS) + 1;
-            NVDR_CHECK_CUDA_ERROR(cudaLaunchKernel((void*)triangleSetupKernel, dim3(setupBlocks, 1, 1), dim3(32, CR_SETUP_WARPS), args, 0, stream));
+            NVDR_CHECK_CUDA_ERROR(LAUNCH_KERNEL((void*)triangleSetupKernel, dim3(setupBlocks, 1, 1), dim3(32, CR_SETUP_WARPS), args, 0, stream));
         }
-        NVDR_CHECK_CUDA_ERROR(cudaLaunchKernel((void*)binRasterKernel, dim3(CR_BIN_STREAMS_SIZE, 1, m_numImages), brBlock, args, 0, stream));
-        NVDR_CHECK_CUDA_ERROR(cudaLaunchKernel((void*)coarseRasterKernel, dim3(m_numSMs * m_numCoarseBlocksPerSM, 1, m_numImages), crBlock, args, 0, stream));
-        NVDR_CHECK_CUDA_ERROR(cudaMemcpyAsync(m_crAtomicsHost.getPtr(), m_crAtomics.getPtr(), sizeof(CRAtomics) * m_numImages, cudaMemcpyDeviceToHost, stream));
+        NVDR_CHECK_CUDA_ERROR(LAUNCH_KERNEL((void*)binRasterKernel, dim3(CR_BIN_STREAMS_SIZE, 1, m_numImages), brBlock, args, 0, stream));
+        NVDR_CHECK_CUDA_ERROR(LAUNCH_KERNEL((void*)coarseRasterKernel, dim3(m_numSMs * m_numCoarseBlocksPerSM, 1, m_numImages), crBlock, args, 0, stream));
+        NVDR_CHECK_CUDA_ERROR(MEMCPY_ASYNC(m_crAtomicsHost.getPtr(), m_crAtomics.getPtr(), sizeof(CRAtomics) * m_numImages, cudaMemcpyDeviceToHost, stream));
     }
 
     // Fine rasterizer is launched always.
-    NVDR_CHECK_CUDA_ERROR(cudaLaunchKernel((void*)fineRasterKernel, dim3(m_numSMs * m_numFineBlocksPerSM, 1, m_numImages), frBlock, args, 0, stream));
-    NVDR_CHECK_CUDA_ERROR(cudaStreamSynchronize(stream));
+    NVDR_CHECK_CUDA_ERROR(LAUNCH_KERNEL((void*)fineRasterKernel, dim3(m_numSMs * m_numFineBlocksPerSM, 1, m_numImages), frBlock, args, 0, stream));
+    NVDR_CHECK_CUDA_ERROR(STREAM_SYNC(stream));
 }
 
 //------------------------------------------------------------------------

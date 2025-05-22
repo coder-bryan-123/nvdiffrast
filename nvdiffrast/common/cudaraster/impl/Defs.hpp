@@ -7,7 +7,11 @@
 // license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 #pragma once
+#ifdef USE_ROCM
+#include <hip/hip_runtime.h>
+#else
 #include <cuda_runtime.h>
+#endif
 #include <cstdint>
 
 namespace CR
@@ -34,6 +38,16 @@ namespace CR
 
 #define CR_UNREF(X)         ((void)(X))
 #define CR_ARRAY_SIZE(X)    ((int)(sizeof(X) / sizeof((X)[0])))
+
+#ifdef USE_ROCM
+#define LAUNCH_KERNEL       hipLaunchKernel
+#define MEMCPY_ASYNC        hipMemcpyAsync
+#define STREAM_SYNC         hipStreamSynchronize
+#else
+#define LAUNCH_KERNEL       cudaLaunchKernel
+#define MEMCPY_ASYNC        cudaMemcpyAsync
+#define STREAM_SYNC         cudaStreamSynchronize
+#endif
 
 //------------------------------------------------------------------------
 

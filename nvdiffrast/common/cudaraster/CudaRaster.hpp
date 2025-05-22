@@ -19,6 +19,11 @@
 
 namespace CR
 {
+#ifdef USE_ROCM
+#define STREAM_T hipStream_t
+#else
+#define STREAM_T cudaStream_t
+#endif
 
 class RasterImpl;
 
@@ -45,7 +50,7 @@ public:
     void                    deferredClear           (unsigned int clearColor);                           // Clears color and depth buffers during next call to drawTriangles().
     void                    setVertexBuffer         (void* vertices, int numVertices);                   // GPU pointer managed by caller. Vertex positions in clip space as float4 (x, y, z, w).
     void                    setIndexBuffer          (void* indices, int numTriangles);                   // GPU pointer managed by caller. Triangle index+color quadruplets as uint4 (idx0, idx1, idx2, color).
-    bool                    drawTriangles           (const int* ranges, bool peel, cudaStream_t stream); // Ranges (offsets and counts) as #triangles entries, not as bytes. If NULL, draw all triangles. Returns false in case of internal overflow.
+    bool                    drawTriangles           (const int* ranges, bool peel, STREAM_T stream); // Ranges (offsets and counts) as #triangles entries, not as bytes. If NULL, draw all triangles. Returns false in case of internal overflow.
     void*                   getColorBuffer          (void);                                              // GPU pointer managed by CudaRaster.
     void*                   getDepthBuffer          (void);                                              // GPU pointer managed by CudaRaster.
     void                    swapDepthAndPeel        (void);                                              // Swap depth and peeling buffers.

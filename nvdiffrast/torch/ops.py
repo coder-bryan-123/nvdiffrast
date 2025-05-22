@@ -12,6 +12,8 @@ import numpy as np
 import os
 import torch
 import torch.utils.cpp_extension
+import shutil
+from pathlib import Path
 
 #----------------------------------------------------------------------------
 # C++/Cuda plugin compiler/loader.
@@ -52,6 +54,8 @@ def _get_plugin(gl=False):
     cc_opts = []
     if os.name == 'nt':
         cc_opts += ['/wd4067', '/wd4624'] # Disable warnings in torch headers.
+    if os.getenv("ROCM_HOME") or os.path.exists("/opt/rocm"):
+        common_opts += ['-DHIP_ENABLE_WARP_SYNC_BUILTINS']
 
     # Linker options for the GL-interfacing plugin.
     ldflags = []
@@ -119,6 +123,25 @@ def _get_plugin(gl=False):
                 distutils._msvccompiler._get_vc_env = functools.lru_cache()(distutils._msvccompiler._get_vc_env)
         except:
             pass
+
+    # sync header files
+    if os.getenv("ROCM_HOME") or os.path.exists("/opt/rocm"):
+        cuda_raster_impl_dir = Path(Path(__file__).resolve().parent, "../common/cudaraster/impl")
+        cuda_raster_dir = Path(Path(__file__).resolve().parent, "../common/cudaraster")
+        hip_raster_impl_dir = Path(Path(__file__).resolve().parent, "../common/hipraster/impl")
+        hip_raster_dir = Path(Path(__file__).resolve().parent, "../common/hipraster")
+        
+        # if not hip_raster_dir.exists():
+        #     hip_raster_dir.mkdir(parents=True)
+        
+        # copy all hpp/inl files
+        for hpp_file in cuda_raster_impl_dir.glob("*.hpp"):
+            # print(f"copying {hpp_file}")
+            shutil.copy(hpp_file, hip_raster_impl_dir/hpp_file.name)
+        for inl_file in cuda_raster_impl_dir.glob("*.inl"):
+            shutil.copy(inl_file, hip_raster_impl_dir/inl_file.name)
+        for hpp_file in cuda_raster_dir.glob("*.hpp"):
+            shutil.copy(hpp_file, hip_raster_dir/hpp_file.name)
 
     # Compile and load.
     source_paths = [os.path.join(os.path.dirname(__file__), fn) for fn in source_files]

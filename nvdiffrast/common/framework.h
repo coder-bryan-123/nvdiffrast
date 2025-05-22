@@ -32,17 +32,22 @@ using namespace tensorflow::shape_inference;
 // PyTorch.
 
 #ifdef NVDR_TORCH
-#ifndef __CUDACC__
+#if !(defined(__CUDACC__) || defined(USE_ROCM))
 #include <torch/extension.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/CUDAUtils.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <pybind11/numpy.h>
 #endif
+#include <c10/util/Exception.h>
 #define NVDR_CTX_ARGS int _nvdr_ctx_dummy
 #define NVDR_CTX_PARAMS 0
 #define NVDR_CHECK(COND, ERR) do { TORCH_CHECK(COND, ERR) } while(0)
+#ifdef USE_ROCM
+#define NVDR_CHECK_CUDA_ERROR(HIP_CALL) do { hipError_t err = HIP_CALL; TORCH_CHECK(!err, "Hip error: ", hipGetLastError(), "[", #HIP_CALL, ";]"); } while(0)
+#else
 #define NVDR_CHECK_CUDA_ERROR(CUDA_CALL) do { cudaError_t err = CUDA_CALL; TORCH_CHECK(!err, "Cuda error: ", cudaGetLastError(), "[", #CUDA_CALL, ";]"); } while(0)
+#endif
 #define NVDR_CHECK_GL_ERROR(GL_CALL) do { GL_CALL; GLenum err = glGetError(); TORCH_CHECK(err == GL_NO_ERROR, "OpenGL error: ", getGLErrorString(err), "[", #GL_CALL, ";]"); } while(0)
 #endif
 

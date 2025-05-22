@@ -8,6 +8,7 @@
 
 #include "framework.h"
 #include "texture.h"
+#include <string>
 
 //------------------------------------------------------------------------
 // Mip stack construction and access helpers.

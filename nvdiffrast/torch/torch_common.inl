@@ -8,6 +8,7 @@
 
 #pragma once
 #include "../common/framework.h"
+#include <ATen/ATen.h>
 
 //------------------------------------------------------------------------
 // Input check helpers.

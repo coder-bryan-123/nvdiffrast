@@ -36,7 +36,12 @@ static __forceinline__ __device__ void InterpolateFwdKernelTemplate(const Interp
 
     // If no geometry in entire warp, zero the output and exit.
     // Otherwise force barys to zero and output with live threads.
-    if (__all_sync(0xffffffffu, !triValid))
+#ifdef USE_ROCM
+    uint64_t NEG_ZERO = ~0ULL;
+#else
+    uint32_t NEG_ZERO = 0xffffffffu;
+#endif
+    if (__all_sync(NEG_ZERO, !triValid))
     {
         for (int i=0; i < p.numAttr; i++)
             out[i] = 0.f;

@@ -405,7 +405,11 @@ __global__ void AntialiasGradKernel(const AntialiasKernelParams p)
 
         // Read work item filled out by forward kernel.
         int4 item = p.workBuffer[thread_idx + 1];
+#ifdef USE_ROCM
+        unsigned long long amask = __ballot_sync(~0ULL, item.w);
+#else
         unsigned int amask = __ballot_sync(0xffffffffu, item.w);
+#endif
         if (item.w == 0)
             continue; // No effect.
 
